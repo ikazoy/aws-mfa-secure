@@ -65,6 +65,24 @@ Call `aws` command like you usually would:
 
 Expiration: You get prompted for the MFA token once, and the MFA secure session lasts for 12 hours. You can override the default expiration time with `AWS_MFA_TTL`. For example, `AWS_MFA_TTL=3600` means the session expires in 1 hour instead.
 
+## Option to skip MFA code authentication
+
+This is why this tool is called 'shotgun'.
+If you are lazy to copy MFA code and paste it every time, here is AWS_SESSION_MFA_SHOTGUN option.
+As your secret key extracted from your MFA app like Authy is stored securely, now MFA code is generated with it.
+If you are interested in what happens under the hood, check [this PR](https://github.com/ikazoy/aws-mfa-shotgun/pull/1).
+
+1. Install openssl and [oauthtool](https://www.nongnu.org/oath-toolkit/oathtool.1.html)
+2. Set up bash alias with the environment variable.
+    ```
+    alias aws="AWS_SESSION_MFA_SHOTGUN=true aws-mfa-secure session"
+    ```
+3. Prepare your secret key for MFA.
+    e.g. For Authy, you can find some ways to do so [here](https://gist.github.com/gboudreau/94bb0c11a6209c82418d01a59d958c93).
+4. Execute any aws cli command. You will be prompted to enter the secret key and a pass phrase to encrypt it.
+    The encrypted one is saved as `~/.aws/aws-mfa-secure-sessions/.(AWS_PROFILE)-encrypted-secret-key`
+5. You don't need to input MFA code anymore as long as the security key is valid there.
+
 ## Calling Directly
 
 You can also call `aws-mfa-secure session` directly.
