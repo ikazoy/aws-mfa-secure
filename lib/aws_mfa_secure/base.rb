@@ -63,14 +63,81 @@ module AwsMfaSecure
       flush_cache # Clear memo cache. Not needed for brand new temp credentials, but needed when updating existing ones
     end
 
+    def save_encrypted_secret_key(encrypted_secret_key)
+      begin
+        File.open(encrypted_secret_key_path, 'r') do |f|
+          File.delete(f)
+        end
+      rescue Errno::ENOENT
+      end
+      FileUtils.mkdir_p(File.dirname(encrypted_secret_key_path))
+      IO.write(encrypted_secret_key_path, encrypted_secret_key)
+    end
+
     def session_creds_path
       "#{SESSIONS_PATH}/#{@aws_profile}"
+    end
+
+    def encrypted_secret_key_path
+      "#{SESSIONS_PATH}/.#{@aws_profile}-encrypted-secret-key"
+    end
+
+    def read_encrypted_secret_key
+      begin
+        IO.read(encrypted_secret_key_path)
+      rescue
+        nil
+      end
+    end
+
+    def decrypt_secret_key
+      return unless read_encrypted_secret_key
+      retries = 0
+      begin
+        command = "echo #{read_encrypted_secret_key}  | openssl aes-256-cbc -a -d -salt"
+        # puts "=> #{command}" # uncomment for debugging
+        decrypted_secret_key = `#{command}`
+        unless $?.success?
+          raise
+        end
+        return decrypted_secret_key
+      rescue => exception
+        puts "Failed to decrypt secret key. Try again."
+        retries += 1
+        if retries >= 3
+          $stderr.puts "Giving up after #{retries} retries to decrypt secret key."
+          exit 1
+        end
+        retry
+      end
+    end
+
+    def generate_secret_key
+      secret_key = secret_key_prompt
+      command = "echo #{secret_key} | openssl aes-256-cbc -A -a -salt"
+      # puts "=> #{command}" # uncomment for debugging
+      encrypted_secret_key = `#{command}`
+      save_encrypted_secret_key(encrypted_secret_key)
+      secret_key
+    end
+
+    def secret_key_prompt
+      $stderr.print "Please provide your secret key for AWS profile (#{aws_profile}): "
+      $stdin.gets.strip
+    end
+
+    # secret keyからtokenを生成
+    def generate_token_code
+      secret_key = decrypt_secret_key || generate_secret_key
+      command = "oathtool -b --totp #{secret_key}"
+      # puts "=> #{command}" # uncomment for debugging
+      `#{command}`
     end
 
     def get_session_token(shell: false)
       retries = 0
       begin
-        token_code = mfa_prompt
+        token_code = ENV['AWS_SESSION_MFA_SHOTGUN'] ? generate_token_code : mfa_prompt
         options = {
           serial_number: mfa_serial,
           token_code: token_code,
